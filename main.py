@@ -3,34 +3,53 @@
 #pip install fastapi uvicorn
 #creacion del archivo main.py
 
-
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import List
 import sqlite3
 
 app = FastAPI()
-app.title = "API de Agentes de Valorant"
-app.description = "Una API para gestionar agentes de Valorant con SQLite"
-app.version = "1.0.0"
-app.openapi_tags = [{ "name": "Agentes" }]
+app = FastAPI(
+    title="API de Agentes de Valorant",
+    description="API REST para gestionar agentes y habilidades",
+    version="1.0.0",
+    openapi_tags=[{"name": "Agentes", "description": "CRUD de agentes"}]
+    
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # en producción puedes limitar
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # --- Modelos Pydantic ---
 from pydantic import BaseModel
 from typing import List
 
 class Habilidad(BaseModel):
-    name: str
-    description: str
+    name: str = Field(..., example="Dash")
+    description: str = Field(..., example="Se impulsa rápidamente")
 
-class Agente(BaseModel):
-    name: str
-    rol: str
-    origen: str
+class AgenteBase(BaseModel):
+    name: str = Field(..., example="Jett")
+    rol: str = Field(..., example="Duelista")
+    origen: str = Field(..., example="Corea del Sur")
+
+class AgenteCreate(AgenteBase):
+    habilidades: List[Habilidad]
+
+class AgenteResponse(AgenteBase):
+    id: int
     habilidades: List[Habilidad]
     
 # Conexión a base de datos en memoria
-conn = sqlite3.connect(":memory:", check_same_thread=False)
+conn = sqlite3.connect("agentes.db", check_same_thread=False)
 cursor = conn.cursor()
-cursor.execute("CREATE TABLE agentes (id INTEGER PRIMARY KEY, name TEXT, rol TEXT, origen TEXT)")
-cursor.execute("CREATE TABLE habilidades ( id INTEGER PRIMARY KEY,name TEXT,description TEXT, agente_id INTEGER, FOREIGN KEY (agente_id) REFERENCES agentes(id))")
+cursor.execute("CREATE TABLE IF NOT EXISTS agentes (id INTEGER PRIMARY KEY, name TEXT, rol TEXT, origen TEXT)")
+cursor.execute("CREATE TABLE IF NOT EXISTS habilidades ( id INTEGER PRIMARY KEY,name TEXT,description TEXT, agente_id INTEGER, FOREIGN KEY (agente_id) REFERENCES agentes(id))")
 cursor.execute("INSERT INTO agentes (name, rol, origen) VALUES ('jett','duelista','Corea Del Sur')")
 cursor.execute("INSERT INTO habilidades (name, description, agente_id) VALUES ('Lanzar Cuchillos','Lanza un total de 6 cuchillos','1')")
 cursor.execute("INSERT INTO agentes (name, rol, origen) VALUES ('gekko','Iniciador','US')")
@@ -40,7 +59,13 @@ conn.commit()
 # --- Endpoints CRUD ---
 
 # Listar todos los agentes
-@app.get("/agentes", tags=["Agentes"])
+@app.get(
+    "/api/v1/agentes",
+    response_model=List[AgenteResponse],
+    tags=["Agentes"],
+    summary="Listar agentes",
+    description="Obtiene todos los agentes con sus habilidades"
+)
 def get_agentes():
     cursor.execute("SELECT * FROM agentes")
     agentes = cursor.fetchall()
@@ -67,7 +92,13 @@ def get_agentes():
     return resultado
 
 # Obtener agente por ID
-@app.get("/agentes/{agente_id}", tags=["Agentes"])
+@app.get(
+    "/api/v1/agentes/{agente_id}",
+    response_model=AgenteResponse,
+    tags=["Agentes"],
+    summary="Obtener agente por ID",
+    responses={404: {"description": "Agente no encontrado"}}
+)
 def get_agente(agente_id: int):
     cursor.execute("SELECT * FROM agentes WHERE id=?", (agente_id,))
     ag = cursor.fetchone()
@@ -92,19 +123,39 @@ def get_agente(agente_id: int):
     }
 
 # Crear agente
-@app.post("/agentes", tags=["Agentes"])
-def add_agente(agente: Agente):
-    cursor.execute("INSERT INTO agentes (name, rol, origen) VALUES (?, ?, ?)", (agente.name, agente.rol, agente.origen))
-    
+@app.post("/api/v1/agentes",
+    response_model=AgenteResponse,
+    status_code=201,
+    tags=["Agentes"],
+    summary="Crear agente"
+)
+def add_agente(agente: AgenteCreate):
+    cursor.execute("INSERT INTO agentes (name, rol, origen) VALUES (?, ?, ?)",
+                   (agente.name, agente.rol, agente.origen))
+
     agente_id = cursor.lastrowid
-    for habilidad in agente.habilidades:
-        cursor.execute("INSERT INTO habilidades (name, description, agente_id) VALUES (?, ?, ?)", (habilidad.name, habilidad.description, agente_id))
+
+    for hab in agente.habilidades:
+        cursor.execute("INSERT INTO habilidades (name, description, agente_id) VALUES (?, ?, ?)",
+                       (hab.name, hab.description, agente_id))
+
     conn.commit()
-    return {"id": agente_id,**agente.dict()}
+
+    return {"id": agente_id, **agente.dict()}
+
+
+
+
 
 # Actualizar agente
-@app.put("/agentes/{agente_id}", tags=["Agentes"])
-def update_agente(agente_id: int, agente: Agente):
+@app.put(
+    "/api/v1/agentes/{agente_id}",
+    response_model=AgenteResponse,
+    tags=["Agentes"],
+    summary="Actualizar agente"
+)
+
+def update_agente(agente_id: int, agente: AgenteCreate):
 
     # 1. Actualizar agente
     cursor.execute(
@@ -128,8 +179,15 @@ def update_agente(agente_id: int, agente: Agente):
     conn.commit()
 
     return {"id": agente_id, **agente.dict()}
+
+
+
 # Borrar agente
-@app.delete("/agentes/{agente_id}", tags=["Agentes"])
+@app.delete("/api/v1/agentes/{agente_id}",
+    status_code=204,
+    tags=["Agentes"],
+    summary="Eliminar agente")
+
 def delete_agente(agente_id: int):
     cursor.execute("DELETE FROM agentes WHERE id=?", (agente_id,))
     conn.commit()
@@ -143,11 +201,11 @@ def delete_agente(agente_id: int):
 
 #la podemosmprobar en el navegador:
 #
-#http://127.0.0.1:8000/agentes → lista todos.
-#http://127.0.0.1:8000/agentes/1 → obtiene agente por ID.
-#POST /agentes → crea agente.
-#PUT /agentes/{id} → actualiza agente.
-#DELETE /agentes/{id} → elimina agente.
+#http://127.0.0.1:8000/api/v1/agentes → lista todos.
+#http://127.0.0.1:8000/api/v1/agentes/1 → obtiene agente por ID.
+#POST /api/v1/agentes → crea agente.
+#PUT /api/v1/agentes/{id} → actualiza agente.
+#DELETE /api/v1/agentes/{id} → elimina agente.
 
 #Documentación automática:
 #Swagger UI: http://127.0.0.1:8000/docs
