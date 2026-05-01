@@ -8,6 +8,10 @@ from fastapi import FastAPI, HTTPException
 import sqlite3
 
 app = FastAPI()
+app.title = "API de Agentes de Valorant"
+app.description = "Una API para gestionar agentes de Valorant con SQLite"
+app.version = "1.0.0"
+app.openapi_tags = [{ "name": "Agentes" }]
 # --- Modelos Pydantic ---
 from pydantic import BaseModel
 from typing import List
@@ -36,7 +40,7 @@ conn.commit()
 # --- Endpoints CRUD ---
 
 # Listar todos los agentes
-@app.get("/agentes")
+@app.get("/agentes", tags=["Agentes"])
 def get_agentes():
     cursor.execute("SELECT * FROM agentes")
     agentes = cursor.fetchall()
@@ -63,7 +67,7 @@ def get_agentes():
     return resultado
 
 # Obtener agente por ID
-@app.get("/agentes/{agente_id}")
+@app.get("/agentes/{agente_id}", tags=["Agentes"])
 def get_agente(agente_id: int):
     cursor.execute("SELECT * FROM agentes WHERE id=?", (agente_id,))
     ag = cursor.fetchone()
@@ -88,7 +92,7 @@ def get_agente(agente_id: int):
     }
 
 # Crear agente
-@app.post("/agentes")
+@app.post("/agentes", tags=["Agentes"])
 def add_agente(agente: Agente):
     cursor.execute("INSERT INTO agentes (name, rol, origen) VALUES (?, ?, ?)", (agente.name, agente.rol, agente.origen))
     
@@ -99,7 +103,7 @@ def add_agente(agente: Agente):
     return {"id": agente_id,**agente.dict()}
 
 # Actualizar agente
-@app.put("/agentes/{agente_id}")
+@app.put("/agentes/{agente_id}", tags=["Agentes"])
 def update_agente(agente_id: int, agente: Agente):
 
     # 1. Actualizar agente
@@ -125,7 +129,7 @@ def update_agente(agente_id: int, agente: Agente):
 
     return {"id": agente_id, **agente.dict()}
 # Borrar agente
-@app.delete("/agentes/{agente_id}")
+@app.delete("/agentes/{agente_id}", tags=["Agentes"])
 def delete_agente(agente_id: int):
     cursor.execute("DELETE FROM agentes WHERE id=?", (agente_id,))
     conn.commit()
